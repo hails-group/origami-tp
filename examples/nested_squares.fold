@@ -1,0 +1,49 @@
+{
+  "file_spec": 1.2,
+  "file_creator": "foldtp micro-spec examples",
+  "file_classes": ["singleModel"],
+  "frame_title": "Two-stroke layer: perimeter + infill as separate closed loops",
+  "frame_description": "An outer boundary square (perimeter) and a concentric inner square (infill), printed as two independent closed strokes with distinct roles. Edge-disjoint and Eulerian-complete, and each degree-2 loop is trivially crossing-free -- but not single-stroke (k=2, disconnected components). Demonstrates multi-stroke, multi-role toolpaths.",
+  "frame_classes": ["foldedForm", "tp:toolpath"],
+  "frame_attributes": ["2D"],
+  "frame_unit": "mm",
+  "vertices_coords": [
+    [0, 0],
+    [20, 0],
+    [20, 20],
+    [0, 20],
+    [5, 5],
+    [15, 5],
+    [15, 15],
+    [5, 15]
+  ],
+  "edges_vertices": [
+    [0, 1],
+    [1, 2],
+    [2, 3],
+    [3, 0],
+    [4, 5],
+    [5, 6],
+    [6, 7],
+    [7, 4]
+  ],
+  "edges_assignment": ["F", "F", "F", "F", "F", "F", "F", "F"],
+
+  "tp:paths_vertices": [[0, 1, 2, 3], [4, 5, 6, 7]],
+  "tp:paths_edges":    [[0, 1, 2, 3], [4, 5, 6, 7]],
+  "tp:paths_closed":   [true, true],
+  "tp:paths_travel":   [[false, false, false, false], [false, false, false, false]],
+  "tp:paths_role":     ["perimeter", "infill"],
+  "tp:paths_source":   ["hand"],
+
+  "tp:vertices_transition": [
+    [[3, 0]],
+    [[0, 1]],
+    [[1, 2]],
+    [[2, 3]],
+    [[7, 4]],
+    [[4, 5]],
+    [[5, 6]],
+    [[6, 7]]
+  ]
+}

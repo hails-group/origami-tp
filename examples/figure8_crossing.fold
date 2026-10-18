@@ -1,0 +1,47 @@
+{
+  "file_spec": 1.2,
+  "file_creator": "foldtp micro-spec examples",
+  "file_classes": ["singleModel"],
+  "frame_title": "Self-crossing Eulerian circuit (same graph as figure8_tour, wrong transition)",
+  "frame_description": "Identical two-square figure-eight graph, but vertex 0 is paired (e0,e4) and (e3,e7) -- opposite edges, whose chords interleave in the ccw order [e4,e7,e0,e3]. Still a valid, edge-disjoint, Eulerian-complete circuit, but NOT crossing-free: it is the non-A-trail counterexample RQ2 is about. Contrast with figure8_tour.fold.",
+  "frame_classes": ["foldedForm", "tp:toolpath"],
+  "frame_attributes": ["2D"],
+  "frame_unit": "mm",
+  "vertices_coords": [
+    [0, 0],
+    [-10, 0],
+    [-10, -10],
+    [0, -10],
+    [10, 0],
+    [10, 10],
+    [0, 10]
+  ],
+  "edges_vertices": [
+    [0, 1],
+    [1, 2],
+    [2, 3],
+    [3, 0],
+    [0, 4],
+    [4, 5],
+    [5, 6],
+    [6, 0]
+  ],
+  "edges_assignment": ["F", "F", "F", "F", "F", "F", "F", "F"],
+
+  "tp:paths_vertices": [[0, 1, 2, 3, 0, 6, 5, 4]],
+  "tp:paths_edges":    [[0, 1, 2, 3, 7, 6, 5, 4]],
+  "tp:paths_closed":   [true],
+  "tp:paths_travel":   [[false, false, false, false, false, false, false, false]],
+  "tp:paths_role":     ["infill"],
+  "tp:paths_source":   ["hand"],
+
+  "tp:vertices_transition": [
+    [[3, 7], [4, 0]],
+    [[0, 1]],
+    [[1, 2]],
+    [[2, 3]],
+    [[4, 5]],
+    [[5, 6]],
+    [[6, 7]]
+  ]
+}

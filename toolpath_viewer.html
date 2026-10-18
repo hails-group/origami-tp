@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FOLD Toolpath Viewer</title>
+<style>
+  :root { --bg:#ffffff; --panel:#f5f5f5; --panel2:#ffffff; --fg:#34495e;
+          --muted:#6b7a89; --line:#d6d3db; --accent:#ec008b;
+          --accent-strong:#c2006f; --danger:#e2231a; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; font:13px/1.45 -apple-system,Segoe UI,Roboto,sans-serif;
+              background:var(--bg); color:var(--fg); overflow:hidden; }
+  #app { display:flex; height:100%; }
+  #side { width:300px; flex:none; background:var(--panel); border-right:1px solid var(--line);
+          display:flex; flex-direction:column; overflow-y:auto; }
+  #side h1 { font-size:14px; margin:0; padding:14px 16px; border-bottom:1px solid var(--line);
+             letter-spacing:.3px; }
+  #side h1 small { color:var(--accent); font-weight:normal; }
+  .group { padding:12px 16px; border-bottom:1px solid var(--line); }
+  .group label.lbl { display:block; color:var(--muted); font-size:11px; text-transform:uppercase;
+                     letter-spacing:.6px; margin-bottom:6px; }
+  select, button, input[type=file]::file-selector-button {
+    background:var(--panel2); color:var(--fg); border:1px solid var(--line);
+    border-radius:6px; padding:6px 8px; font:inherit; cursor:pointer; }
+  select { width:100%; }
+  button:hover { border-color:var(--accent); }
+  .row { display:flex; gap:8px; align-items:center; margin:6px 0; }
+  .checks label { display:flex; align-items:center; gap:7px; margin:5px 0; cursor:pointer; }
+  .checks input { accent-color:var(--accent); }
+  #stats { font-size:12px; }
+  #stats table { width:100%; border-collapse:collapse; }
+  #stats td { padding:2px 0; vertical-align:top; }
+  #stats td.k { color:var(--muted); white-space:nowrap; padding-right:10px; }
+  #stats td.v { text-align:right; font-variant-numeric:tabular-nums; }
+  .pill { display:inline-block; padding:1px 7px; border-radius:10px; font-size:11px; font-weight:600; }
+  .ok { background:#e6f4ea; color:#1a7f4b; } .no { background:#fde7e9; color:#b3001b; }
+  #main { flex:1; position:relative; background:radial-gradient(circle at 50% 40%, #ffffff, #eef0f2 80%); }
+  canvas { display:block; width:100%; height:100%; cursor:grab; }
+  canvas.drag { cursor:grabbing; }
+  #scrubbar { position:absolute; left:0; right:0; bottom:0; padding:10px 16px;
+              background:linear-gradient(to top, rgba(255,255,255,.9), transparent);
+              display:flex; gap:12px; align-items:center; }
+  #scrubbar input[type=range] { flex:1; accent-color:var(--accent); }
+  #playBtn { width:38px; }
+  #seglabel { font-variant-numeric:tabular-nums; color:var(--muted); min-width:120px; text-align:right; }
+  #hint { position:absolute; top:10px; right:14px; color:var(--muted); font-size:11px;
+          background:rgba(245,245,245,.85); border:1px solid var(--line); padding:4px 8px; border-radius:6px; }
+  .legend { display:flex; flex-wrap:wrap; gap:8px 12px; margin-top:6px; }
+  .legend span { display:flex; align-items:center; gap:5px; color:var(--muted); font-size:11px; }
+  .sw { width:14px; height:3px; border-radius:2px; display:inline-block; }
+</style>
+</head>
+<body>
+<div id="app">
+  <aside id="side">
+    <h1>FOLD Toolpath Viewer <small>tp:</small></h1>
+
+    <div class="group">
+      <label class="lbl">Example</label>
+      <select id="exSel"></select>
+      <div class="row"><input type="file" id="fileIn" accept=".fold,.json,application/json"></div>
+    </div>
+
+    <div class="group">
+      <label class="lbl">Color mode</label>
+      <select id="colorMode">
+        <option value="role">Feature (role)</option>
+        <option value="pt">Print / travel</option>
+        <option value="order">Deposition order</option>
+        <option value="dir">Direction (anisotropy)</option>
+      </select>
+      <div class="legend" id="legend"></div>
+    </div>
+
+    <div class="group checks">
+      <label class="lbl">Layers</label>
+      <label><input type="checkbox" id="cCrease" checked> crease graph</label>
+      <label><input type="checkbox" id="cTravel" checked> travel moves</label>
+      <label><input type="checkbox" id="cArrows"> direction arrows</label>
+      <label><input type="checkbox" id="cCross" checked> crossing highlight</label>
+      <label><input type="checkbox" id="cWidth"> bead width</label>
+    </div>
+
+    <div class="group">
+      <label class="lbl">Stats</label>
+      <div id="stats"></div>
+    </div>
+    <div class="group" style="border-bottom:none">
+      <button id="fitBtn">Reset view</button>
+    </div>
+  </aside>
+
+  <main id="main">
+    <canvas id="cv"></canvas>
+    <div id="hint">drag = pan · wheel = zoom</div>
+    <div id="scrubbar">
+      <button id="playBtn">▶</button>
+      <input type="range" id="scrub" min="0" max="0" value="0" step="1">
+      <span id="seglabel">0 / 0</span>
+    </div>
+  </main>
+</div>
+
+<script>
+// ===== embedded example fixtures (so the file works offline via file://) =====
+const EXAMPLES = {
+"figure8_tour.fold": {"file_spec":1.2,"frame_title":"Crossing-free Eulerian circuit through a degree-4 vertex","frame_classes":["foldedForm","tp:toolpath"],"frame_unit":"mm","vertices_coords":[[0,0],[-10,0],[-10,-10],[0,-10],[10,0],[10,10],[0,10]],"edges_vertices":[[0,1],[1,2],[2,3],[3,0],[0,4],[4,5],[5,6],[6,0]],"edges_assignment":["F","F","F","F","F","F","F","F"],"tp:paths_vertices":[[0,1,2,3,0,4,5,6]],"tp:paths_edges":[[0,1,2,3,4,5,6,7]],"tp:paths_closed":[true],"tp:paths_travel":[[false,false,false,false,false,false,false,false]],"tp:paths_role":["infill"],"tp:vertices_transition":[[[7,0],[3,4]],[[0,1]],[[1,2]],[[2,3]],[[4,5]],[[5,6]],[[6,7]]]},
+"figure8_crossing.fold": {"file_spec":1.2,"frame_title":"Self-crossing circuit — same graph as figure-8, wrong transition","frame_classes":["foldedForm","tp:toolpath"],"frame_unit":"mm","vertices_coords":[[0,0],[-10,0],[-10,-10],[0,-10],[10,0],[10,10],[0,10]],"edges_vertices":[[0,1],[1,2],[2,3],[3,0],[0,4],[4,5],[5,6],[6,0]],"edges_assignment":["F","F","F","F","F","F","F","F"],"tp:paths_vertices":[[0,1,2,3,0,6,5,4]],"tp:paths_edges":[[0,1,2,3,7,6,5,4]],"tp:paths_closed":[true],"tp:paths_travel":[[false,false,false,false,false,false,false,false]],"tp:paths_role":["infill"],"tp:vertices_transition":[[[3,7],[4,0]],[[0,1]],[[1,2]],[[2,3]],[[4,5]],[[5,6]],[[6,7]]]},
+"square_tour.fold": {"file_spec":1.2,"frame_title":"Minimal single-stroke toolpath (a square)","frame_classes":["foldedForm","tp:toolpath"],"frame_unit":"mm","vertices_coords":[[0,0],[10,0],[10,10],[0,10]],"edges_vertices":[[0,1],[1,2],[2,3],[3,0]],"edges_assignment":["F","F","F","F"],"tp:paths_vertices":[[0,1,2,3]],"tp:paths_edges":[[0,1,2,3]],"tp:paths_closed":[true],"tp:paths_travel":[[false,false,false,false]],"tp:paths_role":["infill"],"tp:vertices_transition":[[[3,0]],[[0,1]],[[1,2]],[[2,3]]]},
+"clipped_trail.fold": {"file_spec":1.2,"frame_title":"Clipped region: open trail with a travel move","frame_classes":["foldedForm","tp:toolpath"],"frame_unit":"mm","vertices_coords":[[0,0],[10,0],[10,10],[0,10],[20,0],[30,0],[30,10],[20,10]],"edges_vertices":[[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4]],"edges_assignment":["F","F","F","F","F","F","F","F"],"tp:paths_vertices":[[0,1,2,3,0,4,5,6,7,4]],"tp:paths_edges":[[0,1,2,3,null,4,5,6,7]],"tp:paths_closed":[false],"tp:paths_travel":[[false,false,false,false,true,false,false,false,false]],"tp:paths_role":["infill"],"tp:vertices_transition":[[],[[0,1]],[[1,2]],[[2,3]],[],[[4,5]],[[5,6]],[[6,7]]]},
+"chain3_atrail.fold": {"file_spec":1.2,"frame_title":"A-trail through three corner-linked squares (two degree-4 vertices)","frame_classes":["foldedForm","tp:toolpath"],"frame_unit":"mm","vertices_coords":[[0,0],[-10,0],[-10,-10],[0,-10],[10,0],[10,10],[0,10],[20,10],[20,20],[10,20]],"edges_vertices":[[0,1],[1,2],[2,3],[3,0],[0,4],[4,5],[5,6],[6,0],[5,7],[7,8],[8,9],[9,5]],"edges_assignment":["F","F","F","F","F","F","F","F","F","F","F","F"],"tp:paths_vertices":[[0,1,2,3,0,4,5,7,8,9,5,6]],"tp:paths_edges":[[0,1,2,3,4,5,8,9,10,11,6,7]],"tp:paths_closed":[true],"tp:paths_travel":[[false,false,false,false,false,false,false,false,false,false,false,false]],"tp:paths_role":["infill"],"tp:vertices_transition":[[[7,0],[3,4]],[[0,1]],[[1,2]],[[2,3]],[[4,5]],[[5,8],[11,6]],[[6,7]],[[8,9]],[[9,10]],[[10,11]]]},
+"nested_squares.fold": {"file_spec":1.2,"frame_title":"Two-stroke layer: perimeter + infill loops","frame_classes":["foldedForm","tp:toolpath"],"frame_unit":"mm","vertices_coords":[[0,0],[20,0],[20,20],[0,20],[5,5],[15,5],[15,15],[5,15]],"edges_vertices":[[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4]],"edges_assignment":["F","F","F","F","F","F","F","F"],"tp:paths_vertices":[[0,1,2,3],[4,5,6,7]],"tp:paths_edges":[[0,1,2,3],[4,5,6,7]],"tp:paths_closed":[true,true],"tp:paths_travel":[[false,false,false,false],[false,false,false,false]],"tp:paths_role":["perimeter","infill"],"tp:vertices_transition":[[[3,0]],[[0,1]],[[1,2]],[[2,3]],[[7,4]],[[4,5]],[[5,6]],[[6,7]]]},
+"vertex_degree4.fold": {"file_spec":1.2,"frame_title":"Flat-foldable degree-4 single vertex (crease pattern, no toolpath)","frame_classes":["creasePattern"],"vertices_coords":[[0,0],[1,0],[0,1],[-1,0],[0,-1]],"edges_vertices":[[0,1],[0,2],[0,3],[0,4],[1,2],[2,3],[3,4],[4,1]],"edges_assignment":["M","M","M","V","B","B","B","B"],"edges_foldAngle":[-180,-180,-180,180,0,0,0,0],"faces_vertices":[[0,1,2],[0,2,3],[0,3,4],[0,4,1]]}
+};
+
+// ===== model (FOLD + tp:) =====
+const CREASE = new Set(["M","V","F","U"]);
+const ASSIGN_COLOR = {M:"#e2231a", V:"#0050ff", B:"#6b7a89", F:"#8b93a1", U:"#8b93a1", C:"#8e44ad", J:"#8b93a1"};
+const ROLE_COLOR = {infill:"#f39c12", perimeter:"#2ecc71", bridge:"#9b59b6", skin:"#e67e22"};
+const TRAVEL_COLOR = "#9aa0a8";
+
+let M = null; // current model
+
+function parseFold(raw) {
+  const coords = (raw.vertices_coords||[]).map(c=>[c[0]||0, c[1]||0]);
+  const edges = raw.edges_vertices||[];
+  const assignment = raw.edges_assignment||null;
+  const verticesEdges = raw.vertices_edges||null;
+  // incidence
+  const incident = coords.map(()=>[]);
+  edges.forEach(([u,v],ei)=>{ if(incident[u])incident[u].push(ei); if(incident[v])incident[v].push(ei); });
+  // paths
+  const pv = raw["tp:paths_vertices"]||[];
+  const pe = raw["tp:paths_edges"]||[];
+  const pc = raw["tp:paths_closed"]||[];
+  const pt = raw["tp:paths_travel"]||null;
+  const pr = raw["tp:paths_role"]||null;
+  const paths = pv.map((verts,i)=>({
+    vertices:verts, edges:pe[i]||[], closed:!!pc[i],
+    travel:(pt&&pt[i])||verts.map(()=>false), role:(pr&&pr[i])||"infill"
+  }));
+  // global ordered segments
+  const segments=[];
+  paths.forEach((p,pi)=>{
+    const m=p.vertices.length, s=p.closed?m:m-1;
+    for(let i=0;i<s;i++){
+      const a=p.vertices[i], b=p.closed?p.vertices[(i+1)%m]:p.vertices[i+1];
+      segments.push({a,b,edge:p.edges[i],travel:!!p.travel[i],pathIdx:pi,role:p.role,gi:segments.length});
+    }
+  });
+  const declaredTrans = raw["tp:vertices_transition"]||null;
+  return {raw, title:raw.frame_title||raw.file_title||"(untitled)", coords, edges, assignment,
+          verticesEdges, incident, paths, segments, declaredTrans, hasTP:paths.length>0};
+}
+
+const other=(m,e,v)=>{ const [u,w]=m.edges[e]; return u===v?w:u; };
+function rotation(m,v){
+  if(m.verticesEdges && m.verticesEdges[v]) return m.verticesEdges[v].slice();
+  const [x0,y0]=m.coords[v];
+  return m.incident[v].slice().sort((e1,e2)=>{
+    const o1=other(m,e1,v), o2=other(m,e2,v);
+    return Math.atan2(m.coords[o1][1]-y0,m.coords[o1][0]-x0) -
+           Math.atan2(m.coords[o2][1]-y0,m.coords[o2][0]-x0);
+  });
+}
+function nonCrossing(m,v,pairs){
+  const order=rotation(m,v); const pos={}; order.forEach((e,i)=>pos[e]=i);
+  const chords=[];
+  for(const pr of pairs){ const es=pr.filter(e=>e in pos); if(es.length!==2)continue;
+    let i=pos[es[0]],j=pos[es[1]]; if(i>j)[i,j]=[j,i]; chords.push([i,j]); }
+  for(let a=0;a<chords.length;a++)for(let b=a+1;b<chords.length;b++){
+    const [i1,j1]=chords[a],[i2,j2]=chords[b];
+    const inside=((i1<i2&&i2<j1)?1:0)+((i1<j2&&j2<j1)?1:0);
+    if(inside===1) return false;
+  }
+  return true;
+}
+function impliedTransitions(m){
+  const t={};
+  for(const p of m.paths){
+    const verts=p.vertices, edgs=p.edges, closed=p.closed, travel=p.travel;
+    const mm=verts.length, s=closed?mm:mm-1;
+    verts.forEach((v,idx)=>{
+      const outI = idx<s?idx:null;
+      const inI  = idx>0?idx-1:(closed?s-1:null);
+      const eIn  = (inI!=null && !travel[inI]) ? edgs[inI] : null;
+      const eOut = (outI!=null && !travel[outI]) ? edgs[outI] : null;
+      if(eIn!=null && eOut!=null){ (t[v]=t[v]||[]).push([eIn,eOut]); }
+    });
+  }
+  return t;
+}
+function analyze(m){
+  // coverage
+  const creases = new Set();
+  m.edges.forEach((_,i)=>{ if(!m.assignment || CREASE.has(m.assignment[i])) creases.add(i); });
+  const printed = new Set(); let dupes=false; let printLen=0, travelLen=0, travels=0;
+  for(const s of m.segments){
+    const d=Math.hypot(m.coords[s.b][0]-m.coords[s.a][0], m.coords[s.b][1]-m.coords[s.a][1]);
+    if(s.travel){ travelLen+=d; travels++; }
+    else { printLen+=d; if(s.edge!=null){ if(printed.has(s.edge)) dupes=true; printed.add(s.edge); } }
+  }
+  let missing=0; creases.forEach(e=>{ if(!printed.has(e)) missing++; });
+  const eulerianComplete = missing===0 && m.hasTP;
+  // transitions + crossings
+  const trans = m.declaredTrans ? Object.fromEntries(
+      m.declaredTrans.map((pairs,v)=>[v,(pairs||[])]).filter(([,p])=>p.length))
+    : impliedTransitions(m);
+  const crossingVerts=[];
+  for(const v in trans){ if(!nonCrossing(m,+v,trans[v])) crossingVerts.push(+v); }
+  const aTrail = m.hasTP && eulerianComplete && crossingVerts.length===0 && !dupes;
+  const singleStroke = m.paths.length===1 && m.paths[0].closed && !m.paths[0].travel.some(Boolean);
+  return {creases:creases.size, printedCount:printed.size, eulerianComplete, dupes,
+          printLen, travelLen, travels, strokes:m.paths.length, crossingVerts, aTrail, singleStroke};
+}
+
+// ===== view transform =====
+const cv=document.getElementById("cv"), ctx=cv.getContext("2d");
+let view={scale:1, panX:0, panY:0, base:1, cx:0, cy:0}, dpr=1;
+function fitView(){
+  if(!M||!M.coords.length) return;
+  let minx=Infinity,miny=Infinity,maxx=-Infinity,maxy=-Infinity;
+  for(const [x,y] of M.coords){ minx=Math.min(minx,x);miny=Math.min(miny,y);maxx=Math.max(maxx,x);maxy=Math.max(maxy,y); }
+  const w=Math.max(maxx-minx,1e-6), h=Math.max(maxy-miny,1e-6);
+  view.cx=(minx+maxx)/2; view.cy=(miny+maxy)/2;
+  view.base=0.85*Math.min(cv.clientWidth/w, cv.clientHeight/h);
+  view.scale=1; view.panX=0; view.panY=0;
+}
+function W2S(x,y){
+  const s=view.base*view.scale;
+  return [ (x-view.cx)*s + view.panX + cv.clientWidth/2,
+          -(y-view.cy)*s + view.panY + cv.clientHeight/2 ];
+}
+function resize(){
+  dpr=window.devicePixelRatio||1;
+  cv.width=cv.clientWidth*dpr; cv.height=cv.clientHeight*dpr;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  draw();
+}
+
+// ===== drawing =====
+function colorFor(seg, idx, total){
+  const mode=document.getElementById("colorMode").value;
+  if(seg.travel) return TRAVEL_COLOR;
+  if(mode==="role") return ROLE_COLOR[seg.role]||"#ec008b";
+  if(mode==="pt") return "#f39c12";
+  if(mode==="order"){ const t=idx/Math.max(total-1,1); return `hsl(${(1-t)*238},85%,50%)`; }  // blue→red heatmap
+  if(mode==="dir"){ const a=Math.atan2(M.coords[seg.b][1]-M.coords[seg.a][1], M.coords[seg.b][0]-M.coords[seg.a][0]);
+                    return `hsl(${(a*180/Math.PI+360)%360},70%,50%)`; }
+  return "#ec008b";
+}
+function draw(){
+  ctx.clearRect(0,0,cv.clientWidth,cv.clientHeight);
+  if(!M) return;
+  // crease graph underlay
+  if(document.getElementById("cCrease").checked){
+    ctx.lineWidth=1;
+    M.edges.forEach(([u,v],ei)=>{
+      const a=W2S(...M.coords[u]), b=W2S(...M.coords[v]);
+      const asg=M.assignment?M.assignment[ei]:"U";
+      ctx.strokeStyle=ASSIGN_COLOR[asg]||"#586070";
+      ctx.globalAlpha=M.hasTP?0.30:0.95;     // faint when a toolpath is overlaid
+      ctx.beginPath(); ctx.moveTo(a[0],a[1]); ctx.lineTo(b[0],b[1]); ctx.stroke();
+    });
+    ctx.globalAlpha=1;
+  }
+  const k=+document.getElementById("scrub").value;
+  const total=M.segments.length;
+  const showTravel=document.getElementById("cTravel").checked;
+  const showArrows=document.getElementById("cArrows").checked;
+  const beadWidth=document.getElementById("cWidth").checked;
+  // toolpath up to k
+  for(let i=0;i<k;i++){
+    const s=M.segments[i];
+    if(s.travel && !showTravel) continue;
+    const a=W2S(...M.coords[s.a]), b=W2S(...M.coords[s.b]);
+    ctx.strokeStyle=colorFor(s,i,total);
+    if(s.travel){ ctx.lineWidth=1; ctx.setLineDash([4,4]); }
+    else { ctx.lineWidth = beadWidth ? Math.max(2, 0.45*view.base*view.scale) : 2.5; ctx.setLineDash([]); }
+    ctx.lineCap="round";
+    ctx.beginPath(); ctx.moveTo(a[0],a[1]); ctx.lineTo(b[0],b[1]); ctx.stroke();
+    if(showArrows && !s.travel){
+      const mx=(a[0]+b[0])/2, my=(a[1]+b[1])/2, ang=Math.atan2(b[1]-a[1],b[0]-a[0]), L=6;
+      ctx.setLineDash([]); ctx.lineWidth=1.5; ctx.beginPath();
+      ctx.moveTo(mx,my); ctx.lineTo(mx-L*Math.cos(ang-0.4),my-L*Math.sin(ang-0.4));
+      ctx.moveTo(mx,my); ctx.lineTo(mx-L*Math.cos(ang+0.4),my-L*Math.sin(ang+0.4)); ctx.stroke();
+    }
+  }
+  ctx.setLineDash([]);
+  // crossing highlight
+  if(document.getElementById("cCross").checked && M._a){
+    for(const v of M._a.crossingVerts){
+      const p=W2S(...M.coords[v]);
+      ctx.strokeStyle="#e2231a"; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.arc(p[0],p[1],8,0,2*Math.PI); ctx.stroke();
+    }
+  }
+  // start / head markers
+  if(total){
+    const start=W2S(...M.coords[M.segments[0].a]);
+    ctx.fillStyle="#2ecc71"; ctx.beginPath(); ctx.arc(start[0],start[1],4,0,2*Math.PI); ctx.fill();
+    if(k>0){ const h=W2S(...M.coords[M.segments[k-1].b]);
+      ctx.fillStyle="#34495e"; ctx.beginPath(); ctx.arc(h[0],h[1],4.5,0,2*Math.PI); ctx.fill(); }
+  }
+}
+
+// ===== stats + legend =====
+function pill(b){ return `<span class="pill ${b?'ok':'no'}">${b?'yes':'no'}</span>`; }
+function renderStats(){
+  const a=M._a, u=M.raw.frame_unit?` ${M.raw.frame_unit}`:"";
+  const rows=[
+    ["title", M.title],
+    ["vertices / edges", `${M.coords.length} / ${M.edges.length}`],
+  ];
+  if(M.hasTP){
+    rows.push(
+      ["strokes", a.strokes],
+      ["print length", a.printLen.toFixed(1)+u],
+      ["travel length", a.travelLen.toFixed(1)+u],
+      ["travel moves", a.travels],
+      ["edges printed", `${a.printedCount} / ${a.creases}`],
+      ["Eulerian-complete", pill(a.eulerianComplete)],
+      ["crossing-free (A-trail)", pill(a.aTrail)],
+      ["single-stroke", pill(a.singleStroke)],
+      ["self-crossings", a.crossingVerts.length?`${a.crossingVerts.length} @ v${a.crossingVerts.join(", v")}`:"none"],
+    );
+  } else { rows.push(["toolpath", "none (crease pattern)"]); }
+  document.getElementById("stats").innerHTML =
+    "<table>"+rows.map(([k,v])=>`<tr><td class="k">${k}</td><td class="v">${v}</td></tr>`).join("")+"</table>";
+  // legend
+  const mode=document.getElementById("colorMode").value; let L="";
+  const sw=(c,t)=>`<span><i class="sw" style="background:${c}"></i>${t}</span>`;
+  if(mode==="role"){ const roles=[...new Set(M.paths.map(p=>p.role))];
+    L=roles.map(r=>sw(ROLE_COLOR[r]||"#ec008b",r)).join(""); }
+  else if(mode==="pt") L=sw("#f39c12","print");
+  else if(mode==="order") L=sw("hsl(238,85%,50%)","start")+sw("hsl(0,85%,50%)","end");
+  else if(mode==="dir") L="<span>hue = heading</span>";
+  if(M.hasTP) L+=sw(TRAVEL_COLOR,"travel");
+  document.getElementById("legend").innerHTML=L;
+}
+
+// ===== load =====
+function load(raw){
+  M=parseFold(raw); M._a=analyze(M);
+  const sc=document.getElementById("scrub");
+  sc.max=M.segments.length; sc.value=M.segments.length;
+  document.getElementById("seglabel").textContent=`${sc.value} / ${M.segments.length}`;
+  fitView(); renderStats(); draw();
+}
+
+// ===== events =====
+const exSel=document.getElementById("exSel");
+Object.keys(EXAMPLES).forEach(n=>{ const o=document.createElement("option"); o.value=n; o.textContent=n; exSel.appendChild(o); });
+exSel.onchange=()=>load(EXAMPLES[exSel.value]);
+document.getElementById("fileIn").onchange=e=>{
+  const f=e.target.files[0]; if(!f)return; const r=new FileReader();
+  r.onload=()=>{ try{ load(JSON.parse(r.result)); }catch(err){ alert("Parse error: "+err.message); } };
+  r.readAsText(f);
+};
+["colorMode","cCrease","cTravel","cArrows","cCross","cWidth"].forEach(id=>{
+  document.getElementById(id).addEventListener("change",()=>{ renderStats(); draw(); });
+});
+const sc=document.getElementById("scrub");
+sc.addEventListener("input",()=>{ document.getElementById("seglabel").textContent=`${sc.value} / ${M.segments.length}`; draw(); });
+document.getElementById("fitBtn").onclick=()=>{ fitView(); draw(); };
+
+// play/pause
+let playing=false, raf=null;
+const playBtn=document.getElementById("playBtn");
+playBtn.onclick=()=>{ playing=!playing; playBtn.textContent=playing?"⏸":"▶";
+  if(playing){ if(+sc.value>=+sc.max) sc.value=0; tick(); } else cancelAnimationFrame(raf); };
+let last=0;
+function tick(t){
+  if(!playing) return;
+  if(t-last>40){ last=t; let v=+sc.value+1; if(v>+sc.max){ v=+sc.max; playing=false; playBtn.textContent="▶"; }
+    sc.value=v; document.getElementById("seglabel").textContent=`${v} / ${M.segments.length}`; draw(); }
+  raf=requestAnimationFrame(tick);
+}
+
+// pan / zoom
+let dragging=false, lastX=0, lastY=0;
+cv.addEventListener("mousedown",e=>{ dragging=true; lastX=e.clientX; lastY=e.clientY; cv.classList.add("drag"); });
+window.addEventListener("mouseup",()=>{ dragging=false; cv.classList.remove("drag"); });
+window.addEventListener("mousemove",e=>{ if(!dragging)return; view.panX+=e.clientX-lastX; view.panY+=e.clientY-lastY; lastX=e.clientX; lastY=e.clientY; draw(); });
+cv.addEventListener("wheel",e=>{ e.preventDefault();
+  const r=cv.getBoundingClientRect(), mx=e.clientX-r.left, my=e.clientY-r.top;
+  const f=Math.exp(-e.deltaY*0.0015);
+  // zoom around cursor: keep world point under cursor fixed
+  const sx=mx-cv.clientWidth/2-view.panX, sy=my-cv.clientHeight/2-view.panY;
+  view.panX-=sx*(f-1); view.panY-=sy*(f-1);
+  view.scale*=f; draw();
+},{passive:false});
+
+window.addEventListener("resize",resize);
+// boot
+load(EXAMPLES["figure8_tour.fold"]);
+exSel.value="figure8_tour.fold";
+resize();
+</script>
+</body>
+</html>

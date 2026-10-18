@@ -1,0 +1,57 @@
+{
+  "file_spec": 1.2,
+  "file_creator": "foldtp micro-spec examples",
+  "file_classes": ["singleModel"],
+  "frame_title": "A-trail through three corner-linked squares (two degree-4 vertices)",
+  "frame_description": "Three unit squares chained at shared corners: squares A and B meet at vertex 0, squares B and C meet at vertex 5. Both shared vertices have degree 4; every other vertex has degree 2, so the whole graph is Eulerian. A single closed crossing-free circuit weaves through both hubs with non-crossing pairings -- the figure-eight A-trail scaled to a short tessellation strip.",
+  "frame_classes": ["foldedForm", "tp:toolpath"],
+  "frame_attributes": ["2D"],
+  "frame_unit": "mm",
+  "vertices_coords": [
+    [0, 0],
+    [-10, 0],
+    [-10, -10],
+    [0, -10],
+    [10, 0],
+    [10, 10],
+    [0, 10],
+    [20, 10],
+    [20, 20],
+    [10, 20]
+  ],
+  "edges_vertices": [
+    [0, 1],
+    [1, 2],
+    [2, 3],
+    [3, 0],
+    [0, 4],
+    [4, 5],
+    [5, 6],
+    [6, 0],
+    [5, 7],
+    [7, 8],
+    [8, 9],
+    [9, 5]
+  ],
+  "edges_assignment": ["F", "F", "F", "F", "F", "F", "F", "F", "F", "F", "F", "F"],
+
+  "tp:paths_vertices": [[0, 1, 2, 3, 0, 4, 5, 7, 8, 9, 5, 6]],
+  "tp:paths_edges":    [[0, 1, 2, 3, 4, 5, 8, 9, 10, 11, 6, 7]],
+  "tp:paths_closed":   [true],
+  "tp:paths_travel":   [[false, false, false, false, false, false, false, false, false, false, false, false]],
+  "tp:paths_role":     ["infill"],
+  "tp:paths_source":   ["mv-layer-order"],
+
+  "tp:vertices_transition": [
+    [[7, 0], [3, 4]],
+    [[0, 1]],
+    [[1, 2]],
+    [[2, 3]],
+    [[4, 5]],
+    [[5, 8], [11, 6]],
+    [[6, 7]],
+    [[8, 9]],
+    [[9, 10]],
+    [[10, 11]]
+  ]
+}

@@ -1,0 +1,47 @@
+{
+  "file_spec": 1.2,
+  "file_creator": "foldtp micro-spec examples",
+  "file_classes": ["singleModel"],
+  "frame_title": "Crossing-free Eulerian circuit through a degree-4 vertex",
+  "frame_description": "Two unit squares sharing only the center vertex 0. A single closed A-trail visits vertex 0 twice with the non-crossing pairing (e3,e4) and (e7,e0).",
+  "frame_classes": ["foldedForm", "tp:toolpath"],
+  "frame_attributes": ["2D"],
+  "frame_unit": "mm",
+  "vertices_coords": [
+    [0, 0],
+    [-10, 0],
+    [-10, -10],
+    [0, -10],
+    [10, 0],
+    [10, 10],
+    [0, 10]
+  ],
+  "edges_vertices": [
+    [0, 1],
+    [1, 2],
+    [2, 3],
+    [3, 0],
+    [0, 4],
+    [4, 5],
+    [5, 6],
+    [6, 0]
+  ],
+  "edges_assignment": ["F", "F", "F", "F", "F", "F", "F", "F"],
+
+  "tp:paths_vertices": [[0, 1, 2, 3, 0, 4, 5, 6]],
+  "tp:paths_edges":    [[0, 1, 2, 3, 4, 5, 6, 7]],
+  "tp:paths_closed":   [true],
+  "tp:paths_travel":   [[false, false, false, false, false, false, false, false]],
+  "tp:paths_role":     ["infill"],
+  "tp:paths_source":   ["mv-layer-order"],
+
+  "tp:vertices_transition": [
+    [[7, 0], [3, 4]],
+    [[0, 1]],
+    [[1, 2]],
+    [[2, 3]],
+    [[4, 5]],
+    [[5, 6]],
+    [[6, 7]]
+  ]
+}

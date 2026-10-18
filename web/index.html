@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Origami Slicer</title>
+<script src="https://cdn.jsdelivr.net/pyodide/v0.27.2/full/pyodide.js"></script>
+<style>
+  :root {
+    --bg:#ffffff; --surface:#f5f5f5; --surface-raised:#ffffff;
+    --ink:#34495e; --muted:#6b7a89;
+    --accent:#ec008b; --accent-strong:#c2006f; --on-accent:#ffffff;
+    --border:#d6d3db; --border-strong:#a8a6ae;
+    --warning:#f1970f; --danger:#e2231a;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.5 system-ui,sans-serif; background:var(--bg); color:var(--ink); }
+  header { padding:18px 24px; border-bottom:1px solid var(--border); }
+  header h1 { margin:0; font-size:18px; }
+  header p { margin:4px 0 0; color:var(--muted); font-size:13px; }
+  main { display:grid; grid-template-columns:340px 1fr; gap:0; height:calc(100vh - 70px); }
+  .panel { padding:20px 24px; border-right:1px solid var(--border); overflow:auto; }
+  .drop { border:2px dashed var(--border-strong); border-radius:10px; padding:26px 12px; text-align:center;
+          color:var(--muted); cursor:pointer; transition:.15s; }
+  .drop.hot { border-color:var(--accent); color:var(--ink); background:#fdf0f7; }
+  .drop b { color:var(--ink); }
+  label { display:block; margin:14px 0 4px; color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
+  input[type=range]{ width:100%; accent-color:var(--accent); }
+  .row { display:flex; justify-content:space-between; align-items:center; }
+  .val { color:var(--accent); font-variant-numeric:tabular-nums; }
+  button { width:100%; margin-top:18px; padding:11px; border:1px solid var(--accent); border-radius:8px; font-weight:600;
+           background:var(--accent); color:var(--on-accent); cursor:pointer; font-size:14px; }
+  button:hover { background:var(--accent-strong); border-color:var(--accent-strong); }
+  button:disabled { opacity:.5; cursor:default; }
+  button.ghost { background:var(--surface-raised); border:1px solid var(--border-strong); color:var(--ink); }
+  button.ghost:hover { background:var(--surface-raised); border-color:var(--accent); color:var(--ink); }
+  .stats { margin-top:18px; display:grid; grid-template-columns:1fr 1fr; gap:8px 14px; }
+  .stat { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:9px 11px; }
+  .stat .k { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.04em; }
+  .stat .v { font-size:19px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .view { position:relative; }
+  canvas { width:100%; height:100%; display:block; cursor:grab;
+           background:radial-gradient(circle at 50% 40%, #ffffff, #eef0f2 80%); }
+  canvas:active { cursor:grabbing; }
+  .toolbar { position:absolute; top:14px; left:16px; right:16px; display:flex; gap:8px; align-items:center; z-index:2; }
+  .tb { width:auto; margin:0; padding:6px 11px; background:var(--surface-raised); border:1px solid var(--border);
+        color:var(--ink); border-radius:7px; font-size:12px; font-weight:500; cursor:pointer; }
+  .tb:hover { border-color:var(--accent); }
+  .tb.on { background:#fdf0f7; border-color:var(--accent); color:var(--accent-strong); }
+  .ro { margin-left:auto; color:var(--muted); font-size:12px; font-variant-numeric:tabular-nums;
+        background:rgba(255,255,255,.85); border:1px solid var(--border); padding:6px 10px; border-radius:6px; }
+  .scrub { position:absolute; bottom:16px; left:16px; right:16px; display:flex; gap:10px; align-items:center; z-index:2; }
+  .scrub input { flex:1; }
+  .err { color:var(--danger); margin-top:12px; font-size:13px; white-space:pre-wrap; }
+  .hint { color:var(--muted); font-size:12px; margin-top:6px; }
+  a.dl { display:block; text-align:center; text-decoration:none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Origami Slicer</h1>
+  <p>Upload a simple STL/OBJ without holes. Successful infill uses <b>one</b> crossing-free origami A-trail; perimeter walls are separate strokes.</p>
+</header>
+<main>
+  <div class="panel"><p class="hint">Research prototype: only the largest contour is kept per layer. Review the preview and printer settings before using exported G-code.</p>
+    <div id="drop" class="drop">Drop an <b>STL / OBJ</b> here<br><span class="hint">or click to choose a file</span>
+      <input id="file" type="file" accept=".stl,.obj" hidden>
+    </div>
+    <div id="fname" class="hint"></div>
+
+    <label class="row">Layer height <span class="val" id="lhv">0.30 mm</span></label>
+    <input id="lh" type="range" min="0.1" max="0.6" step="0.05" value="0.3">
+
+    <label class="row">Infill spacing <span class="val" id="spv">1.2 mm</span></label>
+    <input id="sp" type="range" min="0.6" max="3.0" step="0.1" value="1.2">
+
+    <label class="row">Perimeter walls <span class="val" id="wlv">2</span></label>
+    <input id="wl" type="range" min="0" max="4" step="1" value="2">
+
+    <label class="row">Size (largest dim) <span class="val" id="scv">60 mm</span></label>
+    <input id="sc" type="range" min="15" max="140" step="5" value="60">
+
+    <label>Up axis</label>
+    <select id="up" style="width:100%;padding:8px;background:var(--surface-raised);color:var(--ink);border:1px solid var(--border-strong);border-radius:8px">
+      <option value="z">Z up (CAD / most STL)</option>
+      <option value="y">Y up (graphics meshes, e.g. bunny)</option>
+    </select>
+
+    <label class="row">Max layers <span class="val" id="mlv">40</span></label>
+    <input id="ml" type="range" min="4" max="120" step="2" value="40">
+
+    <button id="go" disabled>Slice &amp; generate G-code</button>
+    <div id="status" class="hint"></div>
+    <div id="err" class="err"></div>
+
+    <div class="stats" id="stats" style="display:none">
+      <div class="stat"><div class="k">layers</div><div class="v" id="s_layers">–</div></div>
+      <div class="stat"><div class="k">strokes/layer</div><div class="v" id="s_spl">–</div></div>
+      <div class="stat"><div class="k">retractions</div><div class="v" id="s_trav">–</div></div>
+      <div class="stat"><div class="k">print length</div><div class="v" id="s_len">–</div></div>
+    </div>
+    <a id="dl" class="dl" style="display:none"><button class="ghost">⬇ download .gcode</button></a>
+  </div>
+
+  <div class="view">
+    <div class="toolbar" id="toolbar" style="display:none">
+      <button class="tb" id="modeBtn">▦ 3D stack</button>
+      <button class="tb" id="playBtn">▶ trace stroke</button>
+      <button class="tb on" id="travBtn">travels</button>
+      <button class="tb on" id="outBtn">outline</button>
+      <button class="tb" id="resetBtn">reset view</button>
+      <span class="ro" id="readout"></span>
+    </div>
+    <canvas id="cv"></canvas>
+    <div class="scrub" id="scrub" style="display:none">
+      <button class="tb" id="prevBtn">◀ layer</button>
+      <input id="layer" type="range" min="0" max="0" value="0" step="1">
+      <button class="tb" id="nextBtn">layer ▶</button>
+    </div>
+  </div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+let fileBytes = null, fileName = "";
+
+// sliders -> labels
+const fmt = { lh:v=>v.toFixed(2)+" mm", sp:v=>v.toFixed(1)+" mm", sc:v=>(v|0)+" mm", ml:v=>v|0, wl:v=>(v|0) };
+for (const [id,lab] of [["lh","lhv"],["sp","spv"],["sc","scv"],["ml","mlv"],["wl","wlv"]]) {
+  const el=$(id); const f=fmt[id];
+  const upd=()=>$(lab).textContent=f(parseFloat(el.value)); el.oninput=upd; upd();
+}
+
+// file pick / drop
+const drop=$("drop");
+drop.onclick=()=>$("file").click();
+$("file").onchange=e=>load(e.target.files[0]);
+["dragover","dragenter"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("hot");}));
+["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("hot");}));
+drop.addEventListener("drop",e=>{ if(e.dataTransfer.files[0]) load(e.dataTransfer.files[0]); });
+function load(f){ if(!f) return; fileName=f.name; const r=new FileReader();
+  r.onload=()=>{ fileBytes=r.result; $("fname").textContent="loaded: "+f.name+"  ("+(r.result.byteLength/1024|0)+" KB)";
+    $("go").disabled=!pyReady; }; r.readAsArrayBuffer(f); }
+
+// ---- Pyodide: the Python pipeline runs in-browser (WebAssembly), nothing is uploaded ----
+let pyodide=null, pyReady=false;
+const setStatus=t=>$("status").textContent=t;
+async function initPyodide(){
+  try{
+    setStatus("loading Python runtime… (~6 MB, first visit only)");
+    pyodide=await loadPyodide();
+    for(const f of ["slice_stl.py","clip.py","atrail.py","foldtp.py","origami_slicer.py"]){
+      const response = await fetch("py/"+f);
+      if (!response.ok) throw new Error("Could not load " + f + ": HTTP " + response.status);
+      pyodide.FS.writeFile(f, await response.text());
+    }
+    pyodide.runPython("import sys; sys.path.insert(0,'.'); import origami_slicer, json");
+    pyReady=true; setStatus("ready · slicing happens locally in your browser");
+    $("go").disabled=!fileBytes;
+  }catch(e){ setStatus(""); $("err").textContent="Failed to load Python runtime: "+e; }
+}
+function pySlice(buf, name, p){
+  // write the upload to Pyodide's in-memory FS and read it back as bytes in Python —
+  // robust against JS<->Python TypedArray conversion quirks.
+  pyodide.FS.writeFile("/tmp/_upload", new Uint8Array(buf));
+  const code=`import origami_slicer, json
+_data=open("/tmp/_upload","rb").read()
+json.dumps(origami_slicer.run_slice(_data, ${JSON.stringify(name)},
+  layer_height=${+p.lh}, spacing=${+p.sp}, fit_mm=${+p.size}, up=${JSON.stringify(p.up)},
+  walls=${+p.walls}, max_layers=${+p.maxl}))`;
+  return JSON.parse(pyodide.runPython(code));
+}
+
+// slice
+$("go").onclick=async()=>{
+  if(!fileBytes || !pyReady) return;
+  $("err").textContent=""; $("go").disabled=true; $("go").textContent="slicing…";
+  await new Promise(r=>setTimeout(r,20));     // let the UI paint before the (synchronous) compute
+  try{
+    const j=pySlice(fileBytes, fileName, {lh:$("lh").value, sp:$("sp").value,
+                    size:$("sc").value, up:$("up").value, walls:$("wl").value, maxl:$("ml").value});
+    if(j.error){ $("err").textContent=j.error; return; }
+    showStats(j.stats);
+    if(!j.layers || !j.layers.length){ $("err").textContent="No printable layers — try a larger size, the other up-axis, or a coarser layer height."; return; }
+    setLayers(j.layers);
+    const blob=new Blob([j.gcode],{type:"text/plain"});
+    const a=$("dl"); a.href=URL.createObjectURL(blob);
+    a.download=(fileName.replace(/\.[^.]+$/,"")||"part")+"_origami.gcode";
+    a.style.display="block";
+  }catch(e){ $("err").textContent=String(e); }
+  finally{ $("go").disabled=false; $("go").textContent="Slice & generate G-code"; }
+};
+initPyodide();
+
+function showStats(s){
+  $("stats").style.display="grid";
+  $("s_layers").textContent=s.layers + (s.failed_layers?` (+${s.failed_layers} skip)`:"");
+  const spl=s.layer_strokes.length? (s.strokes/s.layer_strokes.length).toFixed(1):"–";
+  $("s_spl").textContent=spl;
+  $("s_trav").textContent=s.travels;
+  $("s_len").textContent=(s.print_mm/1000).toFixed(2)+" m";
+}
+
+// ---------- layer-aware toolpath viewer (flat top-down or pseudo-3D stack) ----------
+const cv=$("cv"), ctx=cv.getContext("2d"), DPR=devicePixelRatio||1;
+const COL=["#0050ff","#e2231a","#1a9850","#c2006f","#f1970f","#00838f"];
+const V={ layers:[], cur:0, scale:1, ox:0, oy:0, bounds:null, mode:"flat", zExag:1,
+          az:0.7, el:0.6, cx:0, cy:0, cz:0,        // orbit camera (azimuth, elevation, part centre)
+          showTravel:true, showOutline:true, playing:false, prog:0, raf:0 };
+
+function fit(){ const d=cv.parentElement.getBoundingClientRect();
+  cv.width=Math.max(1,d.width*DPR); cv.height=Math.max(1,d.height*DPR); }
+// world (x,y) at layer height z -> centred model coords. flat: top-down; 3d: orbit camera.
+function proj(p,z){
+  const X=p[0]-V.cx, Y=p[1]-V.cy;
+  if(V.mode==="flat") return [X,Y];
+  const Z=(z-V.cz)*V.zExag, ca=Math.cos(V.az), sa=Math.sin(V.az);
+  const Xr=X*ca-Y*sa, Yr=X*sa+Y*ca;
+  return [Xr, Z*Math.cos(V.el) - Yr*Math.sin(V.el)];
+}
+const TX=m=>[V.ox+m[0]*V.scale, cv.height-(V.oy+m[1]*V.scale)];   // model -> canvas (y up)
+const npts=L=>L.strokes.reduce((a,s)=>a+s.length,0);
+function dist(a,b){ return Math.hypot(a[0]-b[0],a[1]-b[1]); }
+function layerDist(L){ let pr=0,tr=0,prev=null;
+  for(const s of L.strokes){ if(s.length<2)continue;
+    if(prev) tr+=dist(prev,s[0]);
+    for(let i=1;i<s.length;i++) pr+=dist(s[i],s[i-1]);
+    prev=s[s.length-1]; }
+  return {pr,tr}; }
+
+function fitView(){ fit();                       // origin-centred: model [0,0] -> screen centre
+  let hx=1e-6, hy=1e-6;
+  for(const L of V.layers) for(const p of L.outline){ const q=proj(p,L.z);
+    hx=Math.max(hx,Math.abs(q[0])); hy=Math.max(hy,Math.abs(q[1])); }
+  const W=cv.width,H=cv.height,pad=48*DPR;
+  V.scale=Math.min((W/2-pad)/hx,(H/2-pad)/hy); V.ox=W/2; V.oy=H/2; }
+
+function setLayers(layers){
+  V.layers=layers; V.cur=Math.min(Math.max(0,V.cur),layers.length-1);
+  // part centre + z-exaggeration (stack height ~0.6× footprint)
+  let x0=1e9,y0=1e9,z0=1e9,x1=-1e9,y1=-1e9,z1=-1e9;
+  for(const L of layers){ z0=Math.min(z0,L.z); z1=Math.max(z1,L.z);
+    for(const p of L.outline){ x0=Math.min(x0,p[0]);y0=Math.min(y0,p[1]);x1=Math.max(x1,p[0]);y1=Math.max(y1,p[1]); } }
+  V.cx=(x0+x1)/2; V.cy=(y0+y1)/2; V.cz=(z0+z1)/2;
+  V.zExag = (0.6*((x1-x0)||1))/((z1-z0)||1);
+  fitView();
+  const sl=$("layer"); sl.max=Math.max(0,layers.length-1); sl.value=V.cur;
+  $("toolbar").style.display="flex"; $("scrub").style.display="flex";
+  trace();
+}
+
+function drawStrokes(L, opts){          // opts: {limit, ghost, color}
+  let drawn=0, prevEnd=null, head=null;
+  for(let si=0; si<L.strokes.length; si++){
+    const s=L.strokes[si]; if(s.length<2) continue;
+    if(!opts.ghost && V.showTravel && prevEnd && drawn<opts.limit){
+      ctx.strokeStyle="#6b7a89"; ctx.lineWidth=1*DPR; ctx.setLineDash([4*DPR,4*DPR]);
+      const a=TX(proj(prevEnd,L.z)),b=TX(proj(s[0],L.z));
+      ctx.beginPath(); ctx.moveTo(a[0],a[1]); ctx.lineTo(b[0],b[1]); ctx.stroke(); ctx.setLineDash([]);
+    }
+    const nw=L.nwall||0;
+    ctx.strokeStyle = opts.color || (si<nw ? "#a8a6ae" : COL[(si-nw)%COL.length]);  // walls grey, infill coloured
+    ctx.lineWidth=(opts.ghost?1.1:2)*DPR; ctx.lineJoin="round"; ctx.lineCap="round";
+    ctx.beginPath(); let started=false, broke=false;
+    for(let i=0;i<s.length;i++){ if(drawn>=opts.limit){broke=true;break;}
+      const q=TX(proj(s[i],L.z)); started?ctx.lineTo(q[0],q[1]):(ctx.moveTo(q[0],q[1]),started=true);
+      head=q; drawn++; }
+    ctx.stroke(); prevEnd=s[s.length-1]; if(broke) break;
+  }
+  return head;
+}
+function render(){
+  ctx.clearRect(0,0,cv.width,cv.height);
+  const L=V.layers[V.cur]; if(!L) return;
+  if(V.mode==="3d"){
+    for(let i=0; i<V.cur; i++){                       // ghosted layers below
+      ctx.globalAlpha = 0.10 + 0.45*(V.cur? i/V.cur : 1);
+      drawStrokes(V.layers[i], {limit:1e15, ghost:true, color:"#a8a6ae"});
+    }
+    ctx.globalAlpha=1;
+  } else if(V.showOutline && L.outline.length){
+    ctx.strokeStyle="#34495e"; ctx.lineWidth=1.5*DPR; ctx.setLineDash([]); ctx.beginPath();
+    L.outline.forEach((p,i)=>{ const q=TX(proj(p,L.z)); i?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]); });
+    ctx.closePath(); ctx.stroke();
+  }
+  const head=drawStrokes(L, {limit: V.playing? V.prog : 1e15, ghost:false});  // current layer (bright)
+  if(V.playing && head){ ctx.fillStyle="#34495e"; ctx.beginPath(); ctx.arc(head[0],head[1],4*DPR,0,7); ctx.fill(); }
+  const d=layerDist(L), nw=L.nwall||0, ninf=L.strokes.length-nw;
+  $("readout").textContent=
+    `layer ${V.cur+1}/${V.layers.length} · z=${L.z.toFixed(2)}mm · ${nw} wall${nw!=1?"s":""} + ${ninf} infill`
+    +` · print ${d.pr|0}mm · travel ${d.tr.toFixed(1)}mm`
+    +(V.mode==="3d"?" · drag to orbit · shift-drag pan":"");
+}
+function trace(){ const L=V.layers[V.cur]; if(!L)return;
+  if(V.raf)cancelAnimationFrame(V.raf); V.playing=true; V.prog=0;
+  $("playBtn").classList.add("on"); $("playBtn").textContent="⏸ tracing"; loop(); }
+function loop(){ const L=V.layers[V.cur]; if(!L||!V.playing){return;}
+  V.prog+=Math.max(4,npts(L)/120); render();
+  if(V.prog<npts(L)+4){ V.raf=requestAnimationFrame(loop); }
+  else { V.playing=false; $("playBtn").classList.remove("on"); $("playBtn").textContent="▶ trace stroke"; render(); } }
+function stopTrace(){ V.playing=false; if(V.raf)cancelAnimationFrame(V.raf);
+  $("playBtn").classList.remove("on"); $("playBtn").textContent="▶ trace stroke"; }
+function setCur(i){ V.cur=Math.max(0,Math.min(V.layers.length-1,i)); $("layer").value=V.cur; stopTrace(); render(); }
+
+$("layer").oninput=e=>setCur(+e.target.value);
+$("prevBtn").onclick=()=>setCur(V.cur-1);
+$("nextBtn").onclick=()=>setCur(V.cur+1);
+$("playBtn").onclick=()=>{ V.playing?stopTrace():trace(); };
+$("travBtn").onclick=()=>{ V.showTravel=!V.showTravel; $("travBtn").classList.toggle("on",V.showTravel); render(); };
+$("outBtn").onclick=()=>{ V.showOutline=!V.showOutline; $("outBtn").classList.toggle("on",V.showOutline); render(); };
+$("resetBtn").onclick=()=>{ fitView(); render(); };
+$("modeBtn").onclick=()=>{ V.mode = V.mode==="flat"?"3d":"flat";
+  $("modeBtn").classList.toggle("on",V.mode==="3d");
+  $("modeBtn").textContent = V.mode==="3d" ? "▢ flat" : "▦ 3D stack";
+  stopTrace(); fitView(); render(); };
+
+addEventListener("keydown",e=>{ if(!V.layers.length) return;
+  if(e.key==="ArrowRight"||e.key==="ArrowUp") setCur(V.cur+1);
+  else if(e.key==="ArrowLeft"||e.key==="ArrowDown") setCur(V.cur-1);
+  else if(e.key===" "){ V.playing?stopTrace():trace(); } else return;
+  e.preventDefault(); });
+
+let drag=null;
+cv.addEventListener("mousedown",e=>{ drag={x:e.clientX,y:e.clientY,ox:V.ox,oy:V.oy,az:V.az,el:V.el,
+  orbit:(V.mode==="3d" && !e.shiftKey)}; });
+addEventListener("mouseup",()=>{ drag=null; });
+addEventListener("mousemove",e=>{ if(!drag)return;
+  const dx=e.clientX-drag.x, dy=e.clientY-drag.y;
+  if(drag.orbit){ V.az=drag.az+dx*0.012; V.el=Math.max(0.12,Math.min(1.5,drag.el-dy*0.012)); }
+  else { V.ox=drag.ox+dx*DPR; V.oy=drag.oy-dy*DPR; }
+  render(); });
+cv.addEventListener("wheel",e=>{ e.preventDefault(); const r=cv.getBoundingClientRect();
+  const mx=(e.clientX-r.left)*DPR, my=cv.height-(e.clientY-r.top)*DPR, k=Math.exp(-e.deltaY*0.0015);
+  V.ox=mx-(mx-V.ox)*k; V.oy=my-(my-V.oy)*k; V.scale*=k; render(); },{passive:false});
+addEventListener("resize",()=>{ if(V.bounds){ fit(); render(); } });
+fit();
+</script>
+</body>
+</html>

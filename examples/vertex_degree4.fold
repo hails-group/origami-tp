@@ -1,0 +1,33 @@
+{
+  "file_spec": 1.2,
+  "file_creator": "foldtp micro-spec examples",
+  "file_classes": ["singleModel"],
+  "frame_title": "Flat-foldable degree-4 single vertex",
+  "frame_classes": ["creasePattern"],
+  "frame_attributes": ["2D"],
+  "vertices_coords": [
+    [0, 0],
+    [1, 0],
+    [0, 1],
+    [-1, 0],
+    [0, -1]
+  ],
+  "edges_vertices": [
+    [0, 1],
+    [0, 2],
+    [0, 3],
+    [0, 4],
+    [1, 2],
+    [2, 3],
+    [3, 4],
+    [4, 1]
+  ],
+  "edges_assignment": ["M", "M", "M", "V", "B", "B", "B", "B"],
+  "edges_foldAngle": [-180, -180, -180, 180, 0, 0, 0, 0],
+  "faces_vertices": [
+    [0, 1, 2],
+    [0, 2, 3],
+    [0, 3, 4],
+    [0, 4, 1]
+  ]
+}

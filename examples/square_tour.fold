@@ -1,0 +1,36 @@
+{
+  "file_spec": 1.2,
+  "file_creator": "foldtp micro-spec examples",
+  "file_classes": ["singleModel"],
+  "frame_title": "Minimal single-stroke toolpath (a square)",
+  "frame_classes": ["foldedForm", "tp:toolpath"],
+  "frame_attributes": ["2D"],
+  "frame_unit": "mm",
+  "vertices_coords": [
+    [0, 0],
+    [10, 0],
+    [10, 10],
+    [0, 10]
+  ],
+  "edges_vertices": [
+    [0, 1],
+    [1, 2],
+    [2, 3],
+    [3, 0]
+  ],
+  "edges_assignment": ["F", "F", "F", "F"],
+
+  "tp:paths_vertices": [[0, 1, 2, 3]],
+  "tp:paths_edges":    [[0, 1, 2, 3]],
+  "tp:paths_closed":   [true],
+  "tp:paths_travel":   [[false, false, false, false]],
+  "tp:paths_role":     ["infill"],
+  "tp:paths_source":   ["hand"],
+
+  "tp:vertices_transition": [
+    [[3, 0]],
+    [[0, 1]],
+    [[1, 2]],
+    [[2, 3]]
+  ]
+}
